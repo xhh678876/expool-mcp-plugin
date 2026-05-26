@@ -67,6 +67,59 @@ That's it. Next `claude` session, you get `/expool:upload`,
 `/expool:search`, `/expool:list`, `/expool:auto-on`, and the other slash
 commands.
 
+## 怎么拿 API Key 和配对码（创智 SII 经验池门户）
+
+经验池门户（Experience Pool Portal）是创智 SII 开发机上的内网网站，
+登录后 **/me** 页面可以一键生成绑定本机所需的 API Key (`expk_...`)
+或一次性配对码 (`expair_...`)。
+
+### 1. 打开门户
+
+| 入口 | URL | 适用场景 |
+|---|---|---|
+| **创智 SII 开发机（内网）** | `https://nat2-notebook-inspire.sii.edu.cn/<你的-ws-/project-/user-/vscode-代理路径>/proxy/3002/me` | 在 SII 启智平台上用 VS Code Web 时直接打开 |
+| **公网入口（如开通了）** | <https://expool.clawsii.com/me> | 不在 SII 内网时备用 |
+
+> ℹ️ SII 内网门户的 URL 是 **每个用户独立**的——`ws-...` / `project-...` /
+> `user-...` 这些段是你自己的工作空间 ID。最简单的拿法：在你的 VS Code Web
+> 地址栏把 `/proxy/<某端口>/<某路径>` 后面那段替换成 `/proxy/3002/me`，
+> 直接回车跳转。
+
+### 2. 登录（SSO）
+
+用启智平台账号 SSO 登录即可，门户不会自己存密码。
+
+### 3. 在 `/me` 页面拿凭据
+
+页面上有两种凭据，**任选一种即可**绑定本机：
+
+| 凭据形式 | 长什么样 | 推荐场景 | 绑定命令 |
+|---|---|---|---|
+| 一次性配对码 | `expair_XXXXXXXX` | **推荐**，只能用一次，自动换 API Key 后失效 | `/expool:pair expair_...` |
+| 长期 API Key | `expk_XXXXXXXX` | 想直接粘贴长期 token | `/expool:bind-api expk_...` |
+
+页面上点 **"Generate pairing code"** 拿配对码，或点 **"Show API key"** 拿
+长期密钥。⚠️ API Key 是长期凭据，**不要**贴到聊天记录 / 截图 / 公开 issue 里。
+
+### 4. 在 Claude Code / Codex 里绑定
+
+```text
+/expool:pair expair_XXXXXXXX        # 配对码，推荐
+# 或者
+/expool:bind-api expk_XXXXXXXX      # 长期 API Key
+```
+
+绑定完后跑 `/expool:status` 应该能看到 `configured: ✅`、`auth_type: api_key`、
+你的 `agent_name`（比如 `user-xhh666`）。然后就可以用 `/expool:upload-all`
+扫描上传本机所有 trace、用 `/expool:search` 做语义检索了。
+
+### 5. 直接用 npm CLI 绑定（不进 Claude Code 也行）
+
+```bash
+npx @haohui666/expool-plugin pair expair_XXXXXXXX
+npx @haohui666/expool-plugin bind-api expk_XXXXXXXX
+```
+
 ## 命令速查（按使用场景）
 
 | 想干什么 | 用哪个命令 |
