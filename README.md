@@ -3,28 +3,36 @@
 > **创智 SII 经验池**的官方插件。一行命令装好，
 > Claude Code / Codex 每次对话前自动检索你的历史经验，做过的题不用再 debug 第二遍。
 
+## 🔗 经验池门户入口
+
+| 入口 | 地址 | 用于 |
+|---|---|---|
+| 🌐 **公网** | <https://expool.clawsii.com> | 首页 / `/me` 拿 API key / `/plugins` 看安装命令 |
+| 🏢 **创智 SII 内网** | `https://nat2-notebook-inspire.sii.edu.cn/<你的-vscode-代理路径>/proxy/3002/` | 启智平台 VS Code Web 用户 |
+
+> 💡 SII 内网 URL 是按用户独立的。**最简单的拿法**：把你 VS Code Web 当前地址栏
+> 末尾那段 `/proxy/<端口>/...` 改成 `/proxy/3002/`，回车跳转就到首页。
+
+---
+
 - 🔍 **自动检索** —— 你每发一条消息，插件会从经验池里捞出最相关的 3 条历史经验注入到上下文
 - 📤 **一键上传** —— 跑过的 session 自动归档到 private 库；想分享时再 `/expool:publish` 到社区池
 - 🛠️ **多 runtime 通吃** —— Claude Code、Codex、OpenClaw、Hermes 一次配置，全平台生效
 
 ---
 
-## ⚡ 30 秒上手（推荐路径）
+## ⚡ 30 秒上手
 
 **第 1 步：装插件**
 
 ```bash
-npx @haohui666/expool-plugin install --agents claude,codex
+npx @haohui666/expool-plugin install
 ```
 
 **第 2 步：拿配对码**
 
-打开经验池门户 `/me` 页面：
-
-- 🏢 **创智 SII 内网**：`https://nat2-notebook-inspire.sii.edu.cn/<你的-vscode-代理路径>/proxy/3002/me`
-- 🌐 **公网**：<https://expool.clawsii.com/me>
-
-启智平台 SSO 登录后，点 **"Generate pairing code"** 复制一串 `expair_...`。
+打开门户 `/me` 页面（地址见上方表格），启智平台 SSO 登录后点
+**"Generate pairing code"**，复制一串 `expair_...`。
 
 **第 3 步：绑定本机**
 
@@ -32,7 +40,7 @@ npx @haohui666/expool-plugin install --agents claude,codex
 npx @haohui666/expool-plugin pair expair_XXXXXXXX
 ```
 
-✅ 完成。下次进 Claude Code 直接用 `/expool:search "你的问题"` 试试效果。
+✅ 完成。下次进 Claude Code 直接用 `/expool:search "你的问题"` 试试。
 
 ---
 
