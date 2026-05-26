@@ -1,250 +1,187 @@
-# expool-mcp-plugin
+# 🧠 expool-mcp-plugin —— 让你的 AI Agent 有"长期记忆"
 
-Agent plugin package that ships one plugin (`expool`) for the
-experience-pool service. The package includes a stdio MCP server and a
-registry script for wiring that MCP server into Claude Code, Codex, OpenClaw,
-and Hermes-style agent runtimes.
+> **创智 SII 经验池**的官方插件。一行命令装好，
+> Claude Code / Codex 每次对话前自动检索你的历史经验，做过的题不用再 debug 第二遍。
 
-## Install
+- 🔍 **自动检索** —— 你每发一条消息，插件会从经验池里捞出最相关的 3 条历史经验注入到上下文
+- 📤 **一键上传** —— 跑过的 session 自动归档到 private 库；想分享时再 `/expool:publish` 到社区池
+- 🛠️ **多 runtime 通吃** —— Claude Code、Codex、OpenClaw、Hermes 一次配置，全平台生效
 
-### Claude Code marketplace
+---
 
-```bash
-# 1. add this marketplace once
-claude plugin marketplace add <git-url-of-this-repo>
+## ⚡ 30 秒上手（推荐路径）
 
-# 2. install the plugin
-claude plugin install expool
-```
-
-### npm / npx installer
+**第 1 步：装插件**
 
 ```bash
-npx @haohui666/expool-plugin install --agents claude,codex,openclaw,hermes \
-  --base <gateway-from-portal-/plugins>  # e.g. https://nat2.../proxy/3080
-npx @haohui666/expool-plugin pair expair_...
-npx @haohui666/expool-plugin bind expk_...
-npx @haohui666/expool-plugin bind-api expk_...
-npx @haohui666/expool-plugin bind+api expk_...
-npx @haohui666/expool-plugin detect
-npx @haohui666/expool-plugin auto on --sources claude-code,codex,hermes
+npx @haohui666/expool-plugin install --agents claude,codex
 ```
 
-Before the npm package is published, use the GitHub source package after the
-repository is pushed:
+**第 2 步：拿配对码**
 
-```bash
-npx --yes git+https://github.com/xhh666/expool-mcp-plugin.git install \
-  --agents claude,codex,openclaw,hermes \
-  --base <gateway-from-portal-/plugins>
-```
+打开经验池门户 `/me` 页面：
 
-For offline/internal transfer, build a local tarball:
+- 🏢 **创智 SII 内网**：`https://nat2-notebook-inspire.sii.edu.cn/<你的-vscode-代理路径>/proxy/3002/me`
+- 🌐 **公网**：<https://expool.clawsii.com/me>
 
-```bash
-npm run release:artifact
-npm install -g ./dist/chuangzhi-expool-plugin-*.tgz
-expool-plugin install --agents claude,codex --base <gateway-from-portal-/plugins>
-```
+启智平台 SSO 登录后，点 **"Generate pairing code"** 复制一串 `expair_...`。
 
-On the Experience Pool intranet portal, `npm run release:artifact` also copies
-the tarball to `dist-public/plugins/`, so users can install directly from:
-
-```bash
-curl --noproxy '*' -fsSL <gateway-from-portal-/plugins>/plugins/install.sh | bash
-```
-
-For machines where shell piping is disabled, run the manual equivalent:
-
-```bash
-tmp="${TMPDIR:-/tmp}/expool-plugin.tgz"
-curl --noproxy '*' -fsSL <gateway-from-portal-/plugins>/plugins/expool.tgz -o "$tmp"
-npm install -g "$tmp"
-expool-plugin install --agents claude,codex,openclaw,hermes --base <gateway-from-portal-/plugins> --force
-```
-
-That's it. Next `claude` session, you get `/expool:upload`,
-`/expool:search`, `/expool:list`, `/expool:auto-on`, and the other slash
-commands.
-
-## 怎么拿 API Key 和配对码（创智 SII 经验池门户）
-
-经验池门户（Experience Pool Portal）是创智 SII 开发机上的内网网站，
-登录后 **/me** 页面可以一键生成绑定本机所需的 API Key (`expk_...`)
-或一次性配对码 (`expair_...`)。
-
-### 1. 打开门户
-
-| 入口 | URL | 适用场景 |
-|---|---|---|
-| **创智 SII 开发机（内网）** | `https://nat2-notebook-inspire.sii.edu.cn/<你的-ws-/project-/user-/vscode-代理路径>/proxy/3002/me` | 在 SII 启智平台上用 VS Code Web 时直接打开 |
-| **公网入口（如开通了）** | <https://expool.clawsii.com/me> | 不在 SII 内网时备用 |
-
-> ℹ️ SII 内网门户的 URL 是 **每个用户独立**的——`ws-...` / `project-...` /
-> `user-...` 这些段是你自己的工作空间 ID。最简单的拿法：在你的 VS Code Web
-> 地址栏把 `/proxy/<某端口>/<某路径>` 后面那段替换成 `/proxy/3002/me`，
-> 直接回车跳转。
-
-### 2. 登录（SSO）
-
-用启智平台账号 SSO 登录即可，门户不会自己存密码。
-
-### 3. 在 `/me` 页面拿凭据
-
-页面上有两种凭据，**任选一种即可**绑定本机：
-
-| 凭据形式 | 长什么样 | 推荐场景 | 绑定命令 |
-|---|---|---|---|
-| 一次性配对码 | `expair_XXXXXXXX` | **推荐**，只能用一次，自动换 API Key 后失效 | `/expool:pair expair_...` |
-| 长期 API Key | `expk_XXXXXXXX` | 想直接粘贴长期 token | `/expool:bind-api expk_...` |
-
-页面上点 **"Generate pairing code"** 拿配对码，或点 **"Show API key"** 拿
-长期密钥。⚠️ API Key 是长期凭据，**不要**贴到聊天记录 / 截图 / 公开 issue 里。
-
-### 4. 在 Claude Code / Codex 里绑定
-
-```text
-/expool:pair expair_XXXXXXXX        # 配对码，推荐
-# 或者
-/expool:bind-api expk_XXXXXXXX      # 长期 API Key
-```
-
-绑定完后跑 `/expool:status` 应该能看到 `configured: ✅`、`auth_type: api_key`、
-你的 `agent_name`（比如 `user-xhh666`）。然后就可以用 `/expool:upload-all`
-扫描上传本机所有 trace、用 `/expool:search` 做语义检索了。
-
-### 5. 直接用 npm CLI 绑定（不进 Claude Code 也行）
+**第 3 步：绑定本机**
 
 ```bash
 npx @haohui666/expool-plugin pair expair_XXXXXXXX
-npx @haohui666/expool-plugin bind-api expk_XXXXXXXX
 ```
 
-## 命令速查（按使用场景）
+✅ 完成。下次进 Claude Code 直接用 `/expool:search "你的问题"` 试试效果。
 
-| 想干什么 | 用哪个命令 |
+---
+
+## 🎯 命令速查
+
+按你想干什么直接选：
+
+| 想干什么 | 命令 |
 |---|---|
-| 一次性把所有 agent 的会话扫描并上传到 private 库 | `/expool:upload-all` |
-| 只上传当前这个 session | `/expool:upload [task-classifier]` |
-| 看本机有哪些 runtime 的会话可被识别（不上传） | `/expool:detect` |
-| 检索经验池找历史做法 | `/expool:search "<query>"` |
-| 拉一条经验的完整卡片 | `/expool:get <id8>` |
+| 让 AI 找历史经验 | `/expool:search "<你的问题>"` |
+| 把所有本机会话扫描+上传 | `/expool:upload-all` |
+| 只上传当前这次对话 | `/expool:upload` |
+| 看本机有哪些 runtime 的会话可识别 | `/expool:detect` |
+| 看一条经验的完整内容 | `/expool:get <id8>` |
 | 列出我自己的全部经验 | `/expool:list` |
-| 撤回一条已上传的经验 | `/expool:revoke <id8>` |
-| 把一条 private 经验发布到社区池 | `/expool:publish <id8>` |
-| 一次性绑定（推荐用配对码） | `/expool:pair expair_...` |
-| 查看绑定 / 配额 / 守护进程状态 | `/expool:status` |
-| 开启 / 关闭后台自动上传 | `/expool:auto-on` / `/expool:auto-off` |
+| 删掉一条经验 | `/expool:revoke <id8>` |
+| 把经验发布到社区池（分享给别人） | `/expool:publish <id8>` |
+| 看绑定 / 配额 / 守护进程状态 | `/expool:status` |
+| 后台自动上传开 / 关 | `/expool:auto-on` / `/expool:auto-off` |
 
-## UserPromptSubmit 自动检索（v0.2.12+）
+---
 
-插件自带一个 UserPromptSubmit hook（`plugins/expool/hooks/hooks.json` →
-`plugins/expool/scripts/auto-search.sh`）。一旦你在 Claude Code 里启用 `expool`
-插件，**每条用户消息发送时**都会被这个 hook 拦下来，做一遍智能过滤后调
-`exp search` 拉 top-3 历史命中，注入到当轮上下文。
+## 🧰 其他装法（按需）
 
-智能过滤（任一条件命中即跳过检索）：
+<details>
+<summary><b>Claude Code 官方 marketplace（不走 npm）</b></summary>
 
-- 长度 < 20 字符（Unicode 字符数）
-- 以 `/` 开头的 slash 命令
-- 整串归一化后是 `yes / no / ok / thanks / 好的 / 谢谢 / 保存 / 上传 / 收到 / 明白` 等纯招呼
+```bash
+claude plugin marketplace add https://github.com/xhh678876/expool-mcp-plugin
+claude plugin install expool
+```
+</details>
 
-环境变量调参：
+<details>
+<summary><b>SII 内网一键脚本（适合没有 npx 的机器）</b></summary>
 
-| 变量 | 默认值 | 作用 |
-|---|---|---|
-| `EXPOOL_AUTO_SEARCH` | `1` | 设 `0` 临时关闭整个 hook（不需要改 settings.json） |
-| `EXPOOL_AUTO_SEARCH_TOP_K` | `3` | 注入的命中数量 |
-| `EXPOOL_AUTO_SEARCH_MIN_CHARS` | `20` | 过滤阈值（字符数） |
-| `EXPOOL_AUTO_SEARCH_TIMEOUT` | `8` | 检索的最长等待秒数 |
-
-注入失败（401 / 网络 / 超时）会静默退出，**不会**打断你的对话。
-完全禁用：在 `~/.claude/settings.json` 中删除 UserPromptSubmit 段，或加
-`"disableAllHooks": true`。
-
-The installer does two things: it registers the bundled MCP server into the
-agent registry, and when Claude Code or Codex is installed it also adds this
-local marketplace and installs the `expool` plugin so slash commands are
-available. Use `--mcp-only` only when you want the registry entry without
-plugin slash commands.
-
-Bind with a portal API key:
-
-```text
-/expool:pair expair_...
-/expool:bind expk_...
-/expool:bind-api expk_...
-/expool:bind+api expk_...
+```bash
+curl --noproxy '*' -fsSL <你的内网 gateway>/plugins/install.sh | bash
 ```
 
-See `plugins/expool/README.md` for the full per-command reference, the
-MCP server design, and the ACL safety model.
+不让管道？拆成两步：
 
-## Repo layout
+```bash
+tmp="${TMPDIR:-/tmp}/expool-plugin.tgz"
+curl --noproxy '*' -fsSL <你的内网 gateway>/plugins/expool.tgz -o "$tmp"
+npm install -g "$tmp"
+expool-plugin install --agents claude,codex --base <你的内网 gateway> --force
+```
+</details>
+
+<details>
+<summary><b>从 GitHub 源码直接装（不发 npm 时备用）</b></summary>
+
+```bash
+npx --yes git+https://github.com/xhh678876/expool-mcp-plugin.git install \
+  --agents claude,codex,openclaw,hermes
+```
+</details>
+
+<details>
+<summary><b>离线 / 内部分发：打 tarball</b></summary>
+
+```bash
+npm run release:artifact
+npm install -g ./dist/*.tgz
+expool-plugin install --agents claude,codex
+```
+</details>
+
+## 🔑 绑定的另一种选择：长期 API Key
+
+不想每次都生成一次性配对码？门户 `/me` 页面点 **"Show API key"** 拿一串
+`expk_...`，然后：
+
+```bash
+npx @haohui666/expool-plugin bind-api expk_XXXXXXXX
+# 或者进了 Claude Code 后：/expool:bind-api expk_XXXXXXXX
+```
+
+⚠️ `expk_...` 是长期凭据 —— 不要贴到聊天记录 / 截图 / 公开 issue 里。
+搞丢了去门户撤销重发即可。
+
+绑完跑 `/expool:status` 验证：能看到 `configured: ✅`、你的 `agent_name`，就齐活了。
+
+---
+
+## 🤖 它怎么"自动检索"的？（v0.2.12+）
+
+插件自带一个 UserPromptSubmit hook，**每条消息发送前**自动跑 `exp search`
+拉 top-3 历史命中注入上下文。
+
+智能过滤（避免无谓检索 + token 浪费）：
+
+- ⏭️ 长度 < 20 字符的消息
+- ⏭️ 以 `/` 开头的 slash 命令
+- ⏭️ 单纯的 `yes / 好的 / 谢谢 / 收到` 等回应
+
+调参（环境变量）：
+
+| 变量 | 默认 | 干啥 |
+|---|---|---|
+| `EXPOOL_AUTO_SEARCH` | `1` | 设 `0` 临时关闭 |
+| `EXPOOL_AUTO_SEARCH_TOP_K` | `3` | 注入几条 |
+| `EXPOOL_AUTO_SEARCH_MIN_CHARS` | `20` | 过滤阈值 |
+| `EXPOOL_AUTO_SEARCH_TIMEOUT` | `8` | 最长等待秒数 |
+
+检索失败（401 / 网络 / 超时）静默退出，**不打断对话**。
+
+详细每个命令的参考、MCP server 设计、ACL 安全模型见 `plugins/expool/README.md`。
+
+---
+
+<details>
+<summary>📁 <b>仓库结构 / 技术细节 / 发版流程</b>（点开看）</summary>
+
+### 仓库结构
 
 ```
 expool-mcp-plugin/
-├── .claude-plugin/marketplace.json       ← marketplace manifest
-├── package.json                           ← npm/npx installer package
-├── PUBLISHING.md                          ← release and publish runbook
-├── bin/expool-plugin.js                   ← npm CLI installer
-├── scripts/                               ← release-check and publish helpers
-├── plugins/expool/
-│   ├── .claude-plugin/plugin.json        ← plugin manifest
-│   ├── .codex-plugin/plugin.json         ← Codex plugin metadata
-│   ├── .mcp.json                         ← stdio MCP server registration
-│   ├── servers/expool_mcp.py             ← the actual MCP server (FastMCP)
-│   ├── vendor/exp_uploader.py             ← bundled canonical uploader
-│   ├── scripts/register-mcp.sh            ← writes agent MCP registries
-│   ├── scripts/auto-upload.sh             ← starts/stops auto upload
-│   ├── scripts/auto-search.sh             ← UserPromptSubmit hook (auto top-3 search)
-│   ├── hooks/hooks.json                   ← plugin-shipped hook declarations
-│   ├── commands/                          ← slash commands
-│   └── README.md
-└── README.md  ← you are here
+├── .claude-plugin/marketplace.json       ← marketplace 清单
+├── package.json                          ← npm/npx 安装器
+├── PUBLISHING.md                         ← 发版 runbook
+├── bin/expool-plugin.js                  ← npm CLI 入口
+├── scripts/                              ← release-check / publish helpers
+└── plugins/expool/
+    ├── .claude-plugin/plugin.json        ← Claude Code 插件清单
+    ├── .codex-plugin/plugin.json         ← Codex 插件清单
+    ├── .mcp.json                         ← stdio MCP server 注册声明
+    ├── servers/expool_mcp.py             ← MCP server 主体（FastMCP）
+    ├── vendor/exp_uploader.py            ← 自带的上传 CLI
+    ├── scripts/register-mcp.sh           ← 把 MCP server 写进 agent 注册表
+    ├── scripts/auto-upload.sh            ← 启停后台自动上传
+    ├── scripts/auto-search.sh            ← UserPromptSubmit hook 脚本
+    ├── hooks/hooks.json                  ← 插件随包声明的 hook
+    ├── commands/                         ← /expool:* slash 命令
+    └── README.md
 ```
 
-## Agent registry wiring
-
-Run the registry script from the repo checkout or from an installed plugin:
+### 手动注册 MCP server
 
 ```bash
 plugins/expool/scripts/register-mcp.sh --targets claude,codex,openclaw,hermes
 ```
 
-It registers the bundled stdio MCP server as `expool`:
+注册时会把 `servers/` + `vendor/` + `scripts/auto-upload.sh` 拷一份到
+agent 自己的目录（`~/.codex/mcp-servers/expool/` 等），避免注册表指向临时 checkout。
+`--force` 覆盖、`--dry-run` 预览、`--direct` 指向当前 plugin 目录。
 
-- Claude Code uses `claude mcp add`.
-- Codex uses `codex mcp add`.
-- Before registering, the script copies `servers/`, `vendor/`, and
-  `scripts/auto-upload.sh` into a stable agent-owned directory such as
-  `~/.codex/mcp-servers/expool/`. This mirrors the ARIS pattern and avoids
-  registry entries pointing at a temporary checkout.
-- OpenClaw and Hermes use `<runtime> mcp add` when available; otherwise the
-  script writes a portable descriptor at `~/.openclaw/mcp/expool.json` or
-  `~/.hermes/mcp/expool.json`.
-
-Use `--force` to replace an existing registration, `--dry-run` to preview, and
-`--direct` if you explicitly want the registry to point at the current plugin
-directory instead of an agent-owned copy.
-
-The npm CLI wraps the same script:
-
-```bash
-expool-plugin install --agents claude,codex --force
-expool-plugin bind-api expk_...
-expool-plugin detect --source auto
-expool-plugin doctor
-```
-
-The registry entry launches a generated `scripts/expool-mcp-runner.sh` inside
-the agent-owned copy. The runner exports `EXPOOL_PLUGIN_ROOT`, `EXPOOL_BASE`,
-and `PYTHONUNBUFFERED` before starting the Python MCP server, so the install
-does not depend on each agent CLI's environment-variable option syntax.
-
-## Automatic upload control
-
-Auto upload is controlled from the command line as well as slash commands:
+### 后台自动上传（命令行）
 
 ```bash
 plugins/expool/scripts/auto-upload.sh start --sources claude-code,codex --interval 120
@@ -253,56 +190,32 @@ plugins/expool/scripts/auto-upload.sh tick --dry-run
 plugins/expool/scripts/auto-upload.sh stop
 ```
 
-Inside Claude Code, the matching commands are `/expool:auto-on`,
-`/expool:auto-off`, `/expool:auto-status`, and `/expool:auto-tick`.
+Slash 命令版：`/expool:auto-on`、`/expool:auto-off`、`/expool:auto-status`、`/expool:auto-tick`。
+底层走 `daemon-tick`，本地 + 服务端双层去重，ACL 默认 `private`。
 
-The scheduler uses the vendored `daemon-tick` implementation, so it is
-incremental and deduped by local state plus server-side fingerprints. Default
-ACL is `private`.
-
-Manual uploads use `source=auto` by default. The uploader selects the runtime
-with the newest local session, then parses trace metadata to infer the model,
-such as Claude model IDs from Claude Code JSONL or Codex model IDs from
-Codex `turn_context` / `session_meta` records.
-
-## How updates work
-
-Claude Code treats marketplaces as **git remotes**. When you `git push` to
-this repo, every machine that ran `claude plugin marketplace add <url>`
-picks up the change on its next refresh (a few minutes or on next session
-start, depending on Claude Code's cache). Users don't need to do anything.
-
-If you tag versions in `.claude-plugin/plugin.json` and pin them in the
-marketplace manifest with `ref: v0.1.x`, you can ship updates more
-deliberately. Right now the manifest uses `source: "./plugins/expool"`
-which always tracks the marketplace HEAD — simpler, fine for the early
-phase.
-
-Before publishing, run:
+### 发版流程
 
 ```bash
-npm run release:check
-EXPOOL_CHECK_GATEWAY=1 EXPOOL_RELEASE_BASE=<intranet-proxy-3080> npm run release:check
-npm run gateway:check -- <intranet-proxy-3080>
-npm run release:artifact
+npm run release:check              # 预检（语法 / 清理 / pack dry-run）
+npm run release:artifact           # 打 tarball 到 dist/
+npm publish --access public        # 发到 npmjs（要带 2FA bypass 的 token）
 ```
 
-See `PUBLISHING.md` for the GitHub and npm release flow.
+详细见 [`PUBLISHING.md`](./PUBLISHING.md)。Claude Code 把 marketplace 当 git remote 看，
+`git push` 之后所有装过这个 marketplace 的机器下次刷新自动拿新版。
 
-## Roadmap
+### Roadmap
 
-- **v0.1** — stdio MCP server, subprocesses local `exp` CLI.
-- **v0.2** (current) — stdio MCP server with bundled `exp_uploader.py` and
-  multi-agent registry wiring plus explicit auto-upload start/stop control.
-  Since **v0.2.12**: ships a UserPromptSubmit hook that auto-injects top-3
-  experience-pool hits before each user prompt; all slash commands now
-  enforce Chinese output and explain server-side fields inline.
-- **v0.3** — optional hosted HTTP MCP endpoint
-  (`https://expool.clawsii.com/mcp`). Auth via Bearer API key. No Python
-  subprocess required on the client.
-- **v0.4** — Promote to the `anthropics/claude-plugins-official`
-  marketplace. Requires moving to OAuth (DCR or CIMD) since `static_bearer`
-  is not endorsed for directory entries.
+- **v0.1** — stdio MCP server，subprocess 本地 `exp` CLI
+- **v0.2**（当前） — 自带 `exp_uploader.py` + 多 runtime 注册 + 后台自动上传控制
+  - **v0.2.12+**：随包 UserPromptSubmit hook（每条消息自动注入 top-3 历史经验）；
+    所有 slash 命令强制中文输出 + 字段释义
+- **v0.3** — 托管 HTTP MCP endpoint (`https://expool.clawsii.com/mcp`)，
+  Bearer API Key 鉴权，客户端不再依赖 Python subprocess
+- **v0.4** — 提交到 `anthropics/claude-plugins-official` 官方 marketplace
+  （需切到 OAuth：DCR 或 CIMD）
+
+</details>
 
 ## License
 
