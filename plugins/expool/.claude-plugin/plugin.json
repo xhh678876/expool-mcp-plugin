@@ -1,12 +1,12 @@
 {
   "name": "expool",
-  "version": "0.2.13",
+  "version": "0.2.14",
   "description": "经验池插件：配对码/API Key 绑定、按 runtime 自动识别的会话上传、语义检索；自带 stdio MCP server 与 UserPromptSubmit hook（每条消息前自动检索 top-3 历史经验注入上下文），可注册到 Claude Code / Codex / OpenClaw / Hermes。",
   "author": {
     "name": "xhh666",
     "email": "xhh666@sii.edu.cn"
   },
-  "homepage": "https://expool.clawsii.com",
+  "homepage": "https://github.com/xhh678876/expool-mcp-plugin",
   "keywords": [
     "experience-pool",
     "mcp",

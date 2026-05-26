@@ -175,9 +175,14 @@ function cmdInstall(args) {
   if (status !== 0) process.exit(status);
   if (!dryRun) writePluginConfig(base);
   if (!mcpOnly && !dryRun) {
-    installAgentPlugins(targets);
-    if (hasTarget(targets, ["claude", "claude-code"])) {
-      writeUserLevelClaudeCommands();
+    // 先把 slash 命令写到 ~/.claude/commands/expool/ —— 即使下面的 plugin
+    // marketplace install 因 claude CLI 缺失 / 网络问题 / 已注册冲突等原因失败，
+    // 用户仍能在 Claude Code 里直接用 /expool:status、/expool:upload-all 等。
+    writeUserLevelClaudeCommands();
+    try {
+      installAgentPlugins(targets);
+    } catch (e) {
+      console.error(`[expool] plugin marketplace install skipped: ${e.message}`);
     }
   }
 }
@@ -232,25 +237,44 @@ function installAgentPlugins(targets) {
 }
 
 function installClaudePlugin() {
-  if (!capture("bash", ["-lc", "command -v claude"]).ok) return;
+  if (!capture("bash", ["-lc", "command -v claude"]).ok) {
+    console.error("[expool] claude CLI not found in PATH — skipping plugin marketplace install (user-level /expool:* 命令已写入 ~/.claude/commands/expool/)");
+    return;
+  }
   console.error("[expool] installing Claude Code plugin marketplace entry");
   let status = runReturn("claude", ["plugin", "marketplace", "add", root, "--scope", "user"]);
-  if (status !== 0) process.exit(status);
+  if (status !== 0) {
+    console.error(`[expool] claude plugin marketplace add 失败 (exit ${status}) — 跳过，已有 user-level slash 命令兜底`);
+    return;
+  }
   status = runReturn("claude", ["plugin", "install", "expool@expool-mcp-plugin"]);
-  if (status !== 0) process.exit(status);
+  if (status !== 0) {
+    console.error(`[expool] claude plugin install 失败 (exit ${status}) — 跳过，已有 user-level slash 命令兜底`);
+    return;
+  }
   status = runReturn("claude", ["plugin", "update", "expool@expool-mcp-plugin"]);
-  if (status !== 0) process.exit(status);
+  if (status !== 0) {
+    console.error(`[expool] claude plugin update 失败 (exit ${status}) — 通常无害，已安装的版本不变`);
+  }
 }
 
 function installCodexPlugin() {
-  if (!capture("bash", ["-lc", "command -v codex"]).ok) return;
+  if (!capture("bash", ["-lc", "command -v codex"]).ok) {
+    console.error("[expool] codex CLI not found in PATH — skipping Codex plugin marketplace install");
+    return;
+  }
   console.error("[expool] installing Codex plugin marketplace entry");
   const marketplace = prepareCodexMarketplace();
   runReturn("codex", ["plugin", "marketplace", "remove", marketplace.name]);
   let status = runReturn("codex", ["plugin", "marketplace", "add", marketplace.root]);
-  if (status !== 0) process.exit(status);
+  if (status !== 0) {
+    console.error(`[expool] codex plugin marketplace add 失败 (exit ${status}) — 跳过`);
+    return;
+  }
   status = runReturn("codex", ["plugin", "add", `expool@${marketplace.name}`]);
-  if (status !== 0) process.exit(status);
+  if (status !== 0) {
+    console.error(`[expool] codex plugin add 失败 (exit ${status}) — 跳过`);
+  }
 }
 
 function prepareCodexMarketplace() {
