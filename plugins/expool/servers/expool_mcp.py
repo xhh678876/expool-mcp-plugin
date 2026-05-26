@@ -661,6 +661,13 @@ def _split_frontmatter(text: str) -> tuple[dict[str, str], str]:
     return fm, body.lstrip("\n")
 
 
+def _make_prompt_callable(body_text: str):
+    """构造一个**无参数**的 prompt 实现，避免 FastMCP 把闭包变量当作用户参数。"""
+    def _prompt_impl() -> str:
+        return body_text
+    return _prompt_impl
+
+
 def _register_command_prompts() -> None:
     if not COMMANDS_DIR.exists():
         return
@@ -673,11 +680,8 @@ def _register_command_prompts() -> None:
         fm, body = _split_frontmatter(text)
         description = fm.get("description") or f"/expool:{name}"
         prompt_name = f"expool:{name}"
-        body_text = body  # capture by value
-
-        @mcp.prompt(name=prompt_name, description=description)
-        def _prompt_impl(_body: str = body_text) -> str:
-            return _body
+        impl = _make_prompt_callable(body)
+        mcp.prompt(name=prompt_name, description=description)(impl)
 
 
 _register_command_prompts()
