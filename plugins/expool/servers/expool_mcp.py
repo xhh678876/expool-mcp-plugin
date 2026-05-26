@@ -635,6 +635,54 @@ def exp_unpublish(experience_id: str) -> dict[str, Any]:
     return _run(["unpublish", "--experience-id", experience_id])
 
 
+# ---------- MCP prompts (slash commands) --------------------------------------
+#
+# Codex 把 slash 命令通过 MCP 协议的 `prompts/list` + `prompts/get` 暴露给用户。
+# 把 commands/*.md 文件动态注册为 @mcp.prompt 后，codex 用户在终端打
+# `/expool:status` 之类就能直接拿到对应的命令指令。Claude Code 则同时通过
+# plugin commands/*.md 直接拿到同一份文件，两路殊途同归。
+
+COMMANDS_DIR = PLUGIN_ROOT / "commands"
+
+
+def _split_frontmatter(text: str) -> tuple[dict[str, str], str]:
+    """从 markdown 中切出 YAML frontmatter（简版解析，仅取 key: value 行）"""
+    if not text.startswith("---\n"):
+        return {}, text
+    parts = text.split("---\n", 2)
+    if len(parts) < 3:
+        return {}, text
+    fm_block, body = parts[1], parts[2]
+    fm: dict[str, str] = {}
+    for line in fm_block.splitlines():
+        if ":" in line and not line.lstrip().startswith("#"):
+            k, v = line.split(":", 1)
+            fm[k.strip()] = v.strip().strip('"').strip("'")
+    return fm, body.lstrip("\n")
+
+
+def _register_command_prompts() -> None:
+    if not COMMANDS_DIR.exists():
+        return
+    for md_file in sorted(COMMANDS_DIR.glob("*.md")):
+        name = md_file.stem  # e.g. "status", "upload-all"
+        try:
+            text = md_file.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        fm, body = _split_frontmatter(text)
+        description = fm.get("description") or f"/expool:{name}"
+        prompt_name = f"expool:{name}"
+        body_text = body  # capture by value
+
+        @mcp.prompt(name=prompt_name, description=description)
+        def _prompt_impl(_body: str = body_text) -> str:
+            return _body
+
+
+_register_command_prompts()
+
+
 # ---------- entry point -------------------------------------------------------
 
 if __name__ == "__main__":
