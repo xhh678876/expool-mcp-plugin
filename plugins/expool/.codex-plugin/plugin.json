@@ -1,6 +1,6 @@
 {
   "name": "expool",
-  "version": "0.2.22",
+  "version": "0.2.23",
   "description": "面向 Codex / Claude Code / OpenClaw / Hermes 的经验池集成。配对码或 API Key 一次性绑定，注册 MCP server，跨 runtime 检索经验，自动识别本机 trace 后上传到 private 库。",
   "author": {
     "name": "xhh666",

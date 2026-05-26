@@ -190,15 +190,46 @@ function cmdInstall(args) {
   if (status !== 0) process.exit(status);
   if (!dryRun) writePluginConfig(base);
   if (!mcpOnly && !dryRun) {
-    // 先把 slash 命令写到 ~/.claude/commands/expool/ —— 即使下面的 plugin
-    // marketplace install 因 claude CLI 缺失 / 网络问题 / 已注册冲突等原因失败，
-    // 用户仍能在 Claude Code 里直接用 /expool:status、/expool:upload-all 等。
+    // Claude Code: ~/.claude/commands/expool/<name>.md → /expool:<name>
     writeUserLevelClaudeCommands();
+    // Codex: ~/.codex/prompts/expool-<name>.md → /expool-<name>
+    writeUserLevelCodexPrompts();
     try {
       installAgentPlugins(targets);
     } catch (e) {
       console.error(`[expool] plugin marketplace install skipped: ${e.message}`);
     }
+  }
+}
+
+function writeUserLevelCodexPrompts() {
+  // Codex 用户级 slash 命令：~/.codex/prompts/<name>.md → /<name>
+  // 用 `expool-<原名>` 前缀避免和别的 prompt 命名冲突，与 Claude Code 的
+  // `/expool:status` 风格对齐（codex 这边变成 `/expool-status`）。
+  const srcDir = path.join(pluginRoot, "commands");
+  const destDir = path.join(os.homedir(), ".codex", "prompts");
+  if (!exists(srcDir)) return;
+  let files;
+  try {
+    files = fs.readdirSync(srcDir).filter((f) => f.endsWith(".md"));
+  } catch (e) {
+    console.error(`[expool] skipped codex prompts: ${e.message}`);
+    return;
+  }
+  if (files.length === 0) return;
+  try {
+    fs.mkdirSync(destDir, { recursive: true });
+    let count = 0;
+    for (const f of files) {
+      const dest = path.join(destDir, `expool-${f}`);
+      fs.copyFileSync(path.join(srcDir, f), dest);
+      count++;
+    }
+    console.error(
+      `[expool] wrote ${count} codex prompts to ${destDir} (use /expool-status, /expool-upload-all, ... after restarting codex)`,
+    );
+  } catch (e) {
+    console.error(`[expool] failed to write codex prompts: ${e.message}`);
   }
 }
 
