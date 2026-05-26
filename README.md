@@ -5,13 +5,11 @@
 
 ## 🔗 经验池门户入口
 
-| 入口 | 地址 | 用于 |
-|---|---|---|
-| 🌐 **公网** | <https://expool.clawsii.com> | 首页 / `/me` 拿 API key / `/plugins` 看安装命令 |
-| 🏢 **创智 SII 内网** | `https://nat2-notebook-inspire.sii.edu.cn/<你的-vscode-代理路径>/proxy/3002/` | 启智平台 VS Code Web 用户 |
+🏢 **创智 SII 经验池主页**：<https://nat2-notebook-inspire.sii.edu.cn/ws-0349f1f3-e433-45b7-a935-1dd1bfaf8f6b/project-969649d6-31b8-45af-b6ff-ffb85bbfb3c9/user-ef4936dd-0231-4485-ba30-34e92bf3ea53/vscode/6bf937f8-4826-43cd-b0f6-54f30c688f96/a5119654-19ab-4e0d-9527-bb73a246b9a8/proxy/3002>
 
-> 💡 SII 内网 URL 是按用户独立的。**最简单的拿法**：把你 VS Code Web 当前地址栏
-> 末尾那段 `/proxy/<端口>/...` 改成 `/proxy/3002/`，回车跳转就到首页。
+- 首页：经验池总览
+- `/me`：拿 API key / 一次性配对码
+- `/plugins`：插件安装命令
 
 ---
 
