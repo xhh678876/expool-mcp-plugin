@@ -59,13 +59,14 @@ Bind options:
   --no-verify         Write credential without checking the gateway.
 
 Examples:
-  expool-plugin install --agents claude,codex --base <gateway-from-portal>
-  expool-plugin bind expk_...
-  expool-plugin bind+api expk_...
-  expool-plugin pair expair_...
-  expool-plugin detect
-  expool-plugin auto on --sources claude-code,codex
-  expool-plugin doctor`);
+  expool-plugin install                       # 推荐：自动检测 gateway + 装 MCP + 写 slash 命令
+  expool-plugin pair expair_...               # 推荐绑定方式（配对码）
+  expool-plugin bind-api expk_...             # 备选：长期 API key
+  expool-plugin auto on
+  expool-plugin doctor
+
+  # 高级用法（指定 gateway 或限定 agents）
+  expool-plugin install --agents claude --base https://your-gateway/`);
 }
 
 function die(message, code = 1) {
@@ -175,6 +176,37 @@ function cmdInstall(args) {
   if (!dryRun) writePluginConfig(base);
   if (!mcpOnly && !dryRun) {
     installAgentPlugins(targets);
+    if (hasTarget(targets, ["claude", "claude-code"])) {
+      writeUserLevelClaudeCommands();
+    }
+  }
+}
+
+function writeUserLevelClaudeCommands() {
+  // 即使 `claude` CLI 没装、或 plugin marketplace install 因任何原因没跑成功，
+  // 也保证用户在 ~/.claude/commands/expool/ 下能看到一份 slash command 副本，
+  // 下次进 Claude Code 直接用 /expool/status、/expool/upload-all 等。
+  const srcDir = path.join(pluginRoot, "commands");
+  const destDir = path.join(os.homedir(), ".claude", "commands", "expool");
+  if (!exists(srcDir)) return;
+  let files;
+  try {
+    files = fs.readdirSync(srcDir).filter((f) => f.endsWith(".md"));
+  } catch (e) {
+    console.error(`[expool] skipped user-level slash commands: ${e.message}`);
+    return;
+  }
+  if (files.length === 0) return;
+  try {
+    fs.mkdirSync(destDir, { recursive: true });
+    for (const f of files) {
+      fs.copyFileSync(path.join(srcDir, f), path.join(destDir, f));
+    }
+    console.error(
+      `[expool] wrote ${files.length} slash commands to ${destDir} (use /expool/status, /expool/list, ...)`,
+    );
+  } catch (e) {
+    console.error(`[expool] failed to write user-level slash commands: ${e.message}`);
   }
 }
 
