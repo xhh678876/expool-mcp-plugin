@@ -304,7 +304,7 @@ register_codex() {
 
 register_claude_compatible_or_descriptor() {
   local runtime="$1"
-  local prepared plugin_root server_path runner
+  local prepared plugin_root server_path runner add_status
   if has_subcommand "$runtime" mcp add; then
     prepared="$(prepare_server_for_runtime "$runtime")"
     plugin_root="${prepared%%	*}"
@@ -313,10 +313,20 @@ register_claude_compatible_or_descriptor() {
     if [ "$FORCE" = "1" ]; then
       run "$runtime" mcp remove "$NAME" >/dev/null 2>&1 || true
     fi
+    # 有些 runtime 的 `mcp add --help` 会被外层 mcp 命令吞掉返回 0，导致
+    # has_subcommand 误判存在；这里同样用 set +e 兜住真正调用时的失败。
+    set +e
     run "$runtime" mcp add \
       --transport stdio \
       "$NAME" -- "$runner"
-    note "registered $NAME in $runtime MCP registry"
+    add_status=$?
+    set -e
+    if [ "$add_status" -eq 0 ]; then
+      note "registered $NAME in $runtime MCP registry"
+    else
+      note "$runtime mcp add exit=$add_status; fallback 到 portable descriptor"
+      write_portable_descriptor "$runtime"
+    fi
   else
     note "$runtime native MCP CLI not found; writing portable descriptor"
     write_portable_descriptor "$runtime"

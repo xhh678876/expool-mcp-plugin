@@ -1,6 +1,6 @@
 {
   "name": "@haohui666/expool-plugin",
-  "version": "0.2.15",
+  "version": "0.2.16",
   "description": "Experience Pool plugin installer for Claude Code, Codex, OpenClaw, and Hermes.",
   "type": "commonjs",
   "bin": {
