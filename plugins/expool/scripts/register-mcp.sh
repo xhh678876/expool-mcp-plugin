@@ -249,7 +249,7 @@ PY
 }
 
 register_claude() {
-  local prepared plugin_root server_path runner
+  local prepared plugin_root server_path runner add_status
   if ! command -v claude >/dev/null 2>&1; then
     note "claude not found; skipped"
     return 0
@@ -261,15 +261,24 @@ register_claude() {
   if [ "$FORCE" = "1" ]; then
     run claude mcp remove --scope "$SCOPE" "$NAME" >/dev/null 2>&1 || true
   fi
+  # `claude mcp add` 在 "already exists" 时返回非 0；用 || true 兜住，避免 set -e
+  # 提前杀掉整条流程（否则 node 端的 writeUserLevelClaudeCommands 永远跑不到）
+  set +e
   run claude mcp add \
     --scope "$SCOPE" \
     --transport stdio \
     "$NAME" -- "$runner"
-  note "registered $NAME in Claude Code MCP registry"
+  add_status=$?
+  set -e
+  if [ "$add_status" -eq 0 ]; then
+    note "registered $NAME in Claude Code MCP registry"
+  else
+    note "claude mcp add exit=$add_status (通常表示 already exists，不影响后续 slash 命令安装)"
+  fi
 }
 
 register_codex() {
-  local prepared plugin_root server_path runner
+  local prepared plugin_root server_path runner add_status
   if ! command -v codex >/dev/null 2>&1; then
     note "codex not found; skipped"
     return 0
@@ -281,9 +290,16 @@ register_codex() {
   if [ "$FORCE" = "1" ]; then
     run codex mcp remove "$NAME" >/dev/null 2>&1 || true
   fi
+  set +e
   run codex mcp add \
     "$NAME" -- "$runner"
-  note "registered $NAME in Codex MCP registry"
+  add_status=$?
+  set -e
+  if [ "$add_status" -eq 0 ]; then
+    note "registered $NAME in Codex MCP registry"
+  else
+    note "codex mcp add exit=$add_status (通常表示 already exists，不影响后续 slash 命令安装)"
+  fi
 }
 
 register_claude_compatible_or_descriptor() {
