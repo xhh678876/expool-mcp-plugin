@@ -13,6 +13,17 @@ const autoScript = path.join(pluginRoot, "scripts", "auto-upload.sh");
 const uploader = path.join(pluginRoot, "vendor", "exp_uploader.py");
 const configFile = path.join(os.homedir(), ".config", "expool", "plugin.json");
 
+function packageVersion() {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+    return pkg.version || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+const VERSION = packageVersion();
+
 function gatewayFromUiPublicUrl() {
   const ui = process.env.EXP_UI_PUBLIC_URL || "";
   const match = ui.replace(/\/$/, "").match(/^(.*)\/proxy\/\d+$/);
@@ -30,6 +41,8 @@ const defaultBase =
 function usage() {
   console.log(`Usage: expool-plugin <command> [options]
 
+expool-plugin v${VERSION}
+
 Commands:
   install       Register bundled MCP into agent registries.
   register      Alias for install.
@@ -42,6 +55,7 @@ Commands:
   status        Show local credential identity through the bundled uploader.
   doctor        Check local prerequisites and plugin files.
   path          Print the bundled plugin path.
+  version       Print package version and exit.
 
 Install options:
   --agents LIST       Comma-separated agents. Default: claude,codex,openclaw,hermes
@@ -161,6 +175,7 @@ function writePluginConfig(base) {
 }
 
 function cmdInstall(args) {
+  console.error(`[expool] expool-plugin v${VERSION}`);
   ensureBundledFiles();
   const targets = splitOption(args, ["--agents", "--targets"], "claude,codex,openclaw,hermes");
   const base = splitOption(args, ["--base"], defaultBase);
@@ -457,6 +472,11 @@ switch (command) {
     break;
   case "path":
     console.log(pluginRoot);
+    break;
+  case "version":
+  case "--version":
+  case "-v":
+    console.log(VERSION);
     break;
   case "help":
   case "--help":
