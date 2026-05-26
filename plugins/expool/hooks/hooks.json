@@ -1,0 +1,14 @@
+{
+  "UserPromptSubmit": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "${CLAUDE_PLUGIN_ROOT}/scripts/auto-search.sh",
+          "timeout": 15
+        }
+      ]
+    }
+  ]
+}

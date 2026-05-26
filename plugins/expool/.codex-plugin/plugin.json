@@ -1,0 +1,39 @@
+{
+  "name": "expool",
+  "version": "0.2.12",
+  "description": "面向 Codex / Claude Code / OpenClaw / Hermes 的经验池集成。配对码或 API Key 一次性绑定，注册 MCP server，跨 runtime 检索经验，自动识别本机 trace 后上传到 private 库。",
+  "author": {
+    "name": "xhh666",
+    "email": "xhh666@sii.edu.cn"
+  },
+  "homepage": "https://expool.clawsii.com",
+  "repository": "https://github.com/xhh666/expool-mcp-plugin",
+  "license": "UNLICENSED",
+  "keywords": [
+    "experience-pool",
+    "mcp",
+    "trace-upload",
+    "codex",
+    "claude-code",
+    "openclaw",
+    "hermes"
+  ],
+  "interface": {
+    "displayName": "Experience Pool",
+    "shortDescription": "检索并上传共享 agent trace 的经验池插件",
+    "longDescription": "经验池让 Codex 等本地 agent runtime 用门户 API Key 绑定、注册自带的 MCP server、检索前人轨迹，并把自动识别到的 Claude Code / Codex / OpenClaw / Hermes trace 以 private 形式上传。",
+    "developerName": "xhh666",
+    "category": "Coding",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://expool.clawsii.com",
+    "defaultPrompt": [
+      "Use Experience Pool to search prior solutions before starting, or bind and upload local agent traces when asked"
+    ],
+    "brandColor": "#0891B2",
+    "screenshots": []
+  }
+}

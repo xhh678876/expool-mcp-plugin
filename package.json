@@ -1,0 +1,39 @@
+{
+  "name": "@haohui666/expool-plugin",
+  "version": "0.2.12",
+  "description": "Experience Pool plugin installer for Claude Code, Codex, OpenClaw, and Hermes.",
+  "type": "commonjs",
+  "bin": {
+    "expool-plugin": "bin/expool-plugin.js"
+  },
+  "files": [
+    ".agents",
+    ".claude-plugin",
+    "bin",
+    "plugins",
+    "scripts",
+    "!plugins/**/__pycache__",
+    "!plugins/**/*.pyc",
+    "PUBLISHING.md",
+    "README.md"
+  ],
+  "scripts": {
+    "doctor": "node bin/expool-plugin.js doctor",
+    "test:syntax": "node --check bin/expool-plugin.js && bash -n plugins/expool/scripts/register-mcp.sh && bash -n plugins/expool/scripts/auto-upload.sh && bash -n plugins/expool/scripts/auto-search.sh && bash -n scripts/release-check.sh && bash -n scripts/publish-npm.sh && bash -n scripts/check-gateway.sh && bash -n scripts/make-release-artifacts.sh && python3 -m py_compile plugins/expool/servers/expool_mcp.py plugins/expool/vendor/exp_uploader.py",
+    "release:check": "bash scripts/release-check.sh",
+    "gateway:check": "bash scripts/check-gateway.sh",
+    "release:artifact": "bash scripts/make-release-artifacts.sh",
+    "pack:dry": "npm pack --dry-run",
+    "publish:npm": "bash scripts/publish-npm.sh"
+  },
+  "keywords": [
+    "experience-pool",
+    "mcp",
+    "claude-code",
+    "codex",
+    "openclaw",
+    "hermes"
+  ],
+  "license": "UNLICENSED",
+  "private": false
+}

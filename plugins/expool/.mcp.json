@@ -1,0 +1,11 @@
+{
+  "expool": {
+    "type": "stdio",
+    "command": "python3",
+    "args": ["${CLAUDE_PLUGIN_ROOT}/servers/expool_mcp.py"],
+    "env": {
+      "EXPOOL_PLUGIN_ROOT": "${CLAUDE_PLUGIN_ROOT}",
+      "PYTHONUNBUFFERED": "1"
+    }
+  }
+}

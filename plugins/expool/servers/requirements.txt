@@ -1,0 +1,3 @@
+# Runtime dependencies for expool_mcp.py
+# Installed once on the user's machine; the plugin does not redistribute these.
+mcp>=1.12.0

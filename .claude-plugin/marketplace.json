@@ -1,0 +1,22 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "expool-mcp-plugin",
+  "description": "经验池 MCP 插件 marketplace —— 安装 expool 插件后，agent 可以用斜杠命令完成配对、检索经验、上传 trace。",
+  "owner": {
+    "name": "xhh666",
+    "email": "xhh666@sii.edu.cn"
+  },
+  "plugins": [
+    {
+      "name": "expool",
+      "description": "面向 Claude Code 的经验池集成：配对码/API Key 绑定、按 runtime 自动识别上传、经验检索、自动上传开关。自带 stdio MCP server。",
+      "author": {
+        "name": "xhh666",
+        "email": "xhh666@sii.edu.cn"
+      },
+      "category": "productivity",
+      "source": "./plugins/expool",
+      "homepage": "https://expool.clawsii.com"
+    }
+  ]
+}
