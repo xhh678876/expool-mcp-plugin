@@ -20,6 +20,7 @@ Design notes (v0.2):
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import os
 import shlex
@@ -28,7 +29,15 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 
-from mcp.server.fastmcp import FastMCP
+try:
+    from mcp.server.fastmcp import FastMCP
+except ImportError:
+    sys.stderr.write(
+        "[expool] FATAL: the 'mcp' package is not installed in this Python "
+        "environment, so the expool MCP server cannot start.\n"
+        "[expool] Fix it by running:  pip install --user 'mcp>=1.12'\n"
+    )
+    sys.exit(1)
 
 # ---------- paths -------------------------------------------------------------
 
@@ -77,56 +86,66 @@ mcp = FastMCP("expool")
 
 # ---------- credential gate ---------------------------------------------------
 
-def _credential_file_candidate() -> Path:
-    """Mirror vendor/exp_uploader.py credential selection.
+def _local_credential_present() -> bool:
+    """Lightweight, network-free best-effort check of whether *any* credential
+    is reachable by the vendored CLI.
 
-    Bind writes $EXP_CRED_DIR/<agent>.json, not credential.json. Keep
-    credential.json as a compatibility fallback but prefer EXP_AGENT_NAME and
-    newest named credentials so status and upload gates match the CLI.
+    This intentionally does NOT re-implement vendor/exp_uploader.py's credential
+    *selection* priority (which file wins). It only answers "is there anything
+    to find", and is used solely to produce a friendlier error message when the
+    real CLI-backed probe reports "not configured". The CLI's `whoami` is the
+    source of truth.
+
+    The vendored `load_credential()` reads, in order: EXP_API_KEY /
+    EXPOOL_API_KEY, then EXP_AGENT_NAME + EXP_AGENT_SECRET, then a credential
+    file. We mirror only the coarse presence test here.
     """
-    env_name = os.environ.get("EXP_AGENT_NAME")
-    if env_name:
-        env_path = CRED_DIR / f"{env_name}.json"
-        if env_path.exists():
-            return env_path
+    if os.environ.get("EXP_API_KEY") or os.environ.get("EXPOOL_API_KEY"):
+        return True
+    if os.environ.get("EXP_AGENT_NAME") and os.environ.get("EXP_AGENT_SECRET"):
+        return True
     if CRED_FILE.exists():
-        return CRED_FILE
+        return True
     try:
-        files = sorted(
-            CRED_DIR.glob("*.json"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
+        return any(CRED_DIR.glob("*.json"))
     except OSError:
-        files = []
-    return files[0] if files else CRED_DIR / "default.json"
+        return False
 
 
-def _credential_status() -> tuple[bool, Optional[str], Optional[str]]:
-    """Return (configured, agent_name, error_message)."""
-    cred_file = _credential_file_candidate()
-    if not cred_file.exists():
-        return False, None, (
+def _credential_status() -> tuple[bool, Optional[str], Optional[str], Optional[str]]:
+    """Return (configured, agent_name, auth_type, error_message).
+
+    The authoritative gate is the vendored CLI's `whoami`, which is a purely
+    *local* command (it calls load_credential() and prints — no network). This
+    means our gating reuses the exact credential-selection logic of the CLI and
+    can't drift from it, while staying correct offline.
+    """
+    probe = _run(["whoami"], require_key=False, timeout=30)
+    if probe.get("ok"):
+        agent_name: Optional[str] = None
+        auth_type: Optional[str] = None
+        res = probe.get("result")
+        if isinstance(res, dict):
+            agent_name = res.get("agent_name")
+            auth_type = res.get("auth_type")
+        return True, agent_name, auth_type, None
+
+    # Not configured (or whoami failed). Use the lightweight local check only to
+    # craft a clearer message; never to override the CLI's verdict.
+    if not _local_credential_present():
+        return False, None, None, (
             f"no API key configured in {CRED_DIR}. "
             "Run /expool:bind to set up your credential."
         )
-    try:
-        data = json.loads(cred_file.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as e:
-        return False, None, f"credential file at {cred_file} is unreadable: {e}"
-    if data.get("api_key"):
-        return True, str(data.get("agent_name") or "api-key"), None
-    if not data.get("agent_name") or not data.get("secret"):
-        return False, None, (
-            f"credential file at {cred_file} is missing 'api_key' or "
-            "'agent_name' + 'secret'. Re-run /expool:bind."
-        )
-    return True, str(data["agent_name"]), None
+    return False, None, None, (
+        f"a credential file exists in {CRED_DIR} but the vendored CLI could "
+        "not load a usable credential from it. Re-run /expool:bind."
+    )
 
 
 def _require_key() -> Optional[dict[str, Any]]:
     """Return None if a key is configured; else an error dict for the caller."""
-    ok, _, err = _credential_status()
+    ok, _, _, err = _credential_status()
     if ok:
         return None
     return {
@@ -136,10 +155,15 @@ def _require_key() -> Optional[dict[str, Any]]:
     }
 
 
-def _subprocess_env() -> dict[str, str]:
+def _subprocess_env(extra_env: Optional[dict[str, str]] = None) -> dict[str, str]:
     """Build the env passed to every subprocess call: point the vendored CLI
     at our plugin-owned credential dir + state file, decoupled from the
-    legacy ~/.experience-pool/ install."""
+    legacy ~/.experience-pool/ install.
+
+    extra_env, when given, is merged in last — used to pass secrets (bind
+    secret, API key, pairing code) via the environment instead of argv so they
+    never show up in `ps aux`.
+    """
     env = os.environ.copy()
     env["EXP_CRED_DIR"] = str(CRED_DIR)
     # state.json lives in a plugin-owned dir so /upload-all's daemon-tick
@@ -149,6 +173,8 @@ def _subprocess_env() -> dict[str, str]:
     ).expanduser()
     plugin_state_root.mkdir(parents=True, exist_ok=True)
     env["EXP_STATE_PATH"] = str(plugin_state_root / "state.json")
+    if extra_env:
+        env.update(extra_env)
     return env
 
 
@@ -159,8 +185,14 @@ def _run(
     *,
     timeout: int = DEFAULT_TIMEOUT,
     require_key: bool = True,
+    extra_env: Optional[dict[str, str]] = None,
 ) -> dict[str, Any]:
-    """Invoke the vendored CLI and return a structured dict."""
+    """Invoke the vendored CLI and return a structured dict.
+
+    extra_env: optional dict of additional environment variables merged into
+    the subprocess env. Used to pass sensitive values (secrets / API keys /
+    pairing codes) out of band so they never appear on the process argv line.
+    """
     if require_key:
         gate = _require_key()
         if gate is not None:
@@ -180,7 +212,7 @@ def _run(
             capture_output=True,
             text=True,
             timeout=timeout,
-            env=_subprocess_env(),
+            env=_subprocess_env(extra_env),
         )
     except subprocess.TimeoutExpired:
         return {
@@ -212,36 +244,20 @@ def _run(
     return result
 
 
-def _force_private_acl(acl: Optional[str]) -> str:
-    if acl is None or acl == "" or acl == "private":
-        return "private"
-    raise ValueError(
-        f"acl={acl!r} is not allowed via MCP push tools. Push always uploads "
-        "as 'private'. Use exp_publish with confirm=True to promote later."
-    )
-
-
 # ---------- bootstrap / status tools (no key required) ------------------------
 
 @mcp.tool()
 def expool_status() -> dict[str, Any]:
     """Show plugin status: is the API key configured, where is it stored,
     which gateway are we pointed at, is the vendored CLI present."""
-    ok, agent_name, err = _credential_status()
-    auth_type = "none"
-    cred_file = _credential_file_candidate()
-    if ok and cred_file.exists():
-        try:
-            data = json.loads(cred_file.read_text(encoding="utf-8"))
-            auth_type = "api_key" if data.get("api_key") else "hmac"
-        except (OSError, json.JSONDecodeError):
-            auth_type = "unknown"
+    ok, agent_name, auth_type, err = _credential_status()
+    if not auth_type:
+        auth_type = "none"
     return {
         "ok": True,
         "configured": ok,
         "auth_type": auth_type,
         "agent_name": agent_name,
-        "credential_file": str(cred_file),
         "credential_dir": str(CRED_DIR),
         "gateway": EXPOOL_BASE,
         "plugin_root": str(PLUGIN_ROOT),
@@ -273,10 +289,12 @@ def expool_bind(
         team: optional team slug.
         verify: run /healthz after writing (default True).
     """
+    # The secret is passed via the EXP_BIND_SECRET env var (not argv) so it
+    # never appears in `ps aux`. The vendored CLI reads it when --secret is
+    # omitted. agent_name/agent_id/team are non-sensitive and stay on argv.
     args = [
         "bind",
         "--name", agent_name,
-        "--secret", secret,
         "--skip-claude-settings",
     ]
     if agent_id:
@@ -293,7 +311,7 @@ def expool_bind(
     except OSError:
         pass
 
-    out = _run(args, require_key=False)
+    out = _run(args, require_key=False, extra_env={"EXP_BIND_SECRET": secret})
     # The bind subcommand may write multiple files; tighten perms post-hoc.
     cred_path = None
     if isinstance(out.get("result"), dict):
@@ -324,7 +342,10 @@ def expool_bind_api(
         agent_name: optional local label; server identity is derived from key.
         verify: run /v1/me/quota after writing (default True).
     """
-    args = ["bind-api", "--api-key", api_key]
+    # The API key is passed via the EXP_BIND_API_KEY env var (not argv) so it
+    # never appears in `ps aux`. The vendored CLI reads it when --api-key is
+    # omitted. agent_name is a non-sensitive label and stays on argv.
+    args = ["bind-api"]
     if agent_name:
         args += ["--agent-name", agent_name]
     if not verify:
@@ -336,7 +357,7 @@ def expool_bind_api(
     except OSError:
         pass
 
-    out = _run(args, require_key=False)
+    out = _run(args, require_key=False, extra_env={"EXP_BIND_API_KEY": api_key})
     cred_path = None
     if isinstance(out.get("result"), dict):
         raw_path = out["result"].get("credential_path")
@@ -363,7 +384,10 @@ def expool_pair(
         agent_name: optional local label override.
         verify: run /v1/me/quota after writing (default True).
     """
-    args = ["pair", "--code", code]
+    # The pairing code is passed via the EXP_PAIR_CODE env var (not argv) so it
+    # never appears in `ps aux`. The vendored CLI reads it when --code is
+    # omitted. agent_name is a non-sensitive label and stays on argv.
+    args = ["pair"]
     if agent_name:
         args += ["--agent-name", agent_name]
     if not verify:
@@ -375,7 +399,7 @@ def expool_pair(
     except OSError:
         pass
 
-    out = _run(args, require_key=False)
+    out = _run(args, require_key=False, extra_env={"EXP_PAIR_CODE": code})
     cred_path = None
     if isinstance(out.get("result"), dict):
         raw_path = out["result"].get("credential_path")
@@ -406,6 +430,11 @@ def exp_search(
 ) -> dict[str, Any]:
     """Semantic search across the experience pool.
 
+    Note: this tool keeps require_key=True (a credential is enforced). The
+    gateway does not currently allow anonymous search, and personal-scope
+    results require the caller's identity. If the gateway later permits
+    anonymous community-scope search, this could be relaxed.
+
     Args:
         q: free-text query.
         top_k: max results (default 5).
@@ -415,6 +444,90 @@ def exp_search(
     args = ["search", "--q", q, "--top-k", str(top_k), "--scope", scope, "--json"]
     if task_type:
         args += ["--task-type", task_type]
+    return _run(args)
+
+
+@mcp.tool()
+def exp_rag_context(
+    q: str,
+    top_k: int = 3,
+    scope: str = "personal",
+    task_type: Optional[str] = None,
+    project: Optional[str] = None,
+) -> dict[str, Any]:
+    """Retrieve platform-side RAG context from chunked experience units.
+
+    This is the preferred recall path for agents. It searches the server-side
+    chunk index, applies ACL filtering and quality weighting, then returns a
+    compact context pack instead of card-level search results.
+
+    Args:
+        q: free-text query.
+        top_k: max chunks/context items (default 3).
+        scope: auto | personal | community | project:<slug>.
+        task_type: optional task type filter.
+        project: optional project slug/id; equivalent to scope project:<slug>.
+    """
+    args = [
+        "rag-context",
+        "--q",
+        q,
+        "--top-k",
+        str(top_k),
+        "--scope",
+        scope,
+        "--json",
+    ]
+    if task_type:
+        args += ["--task-type", task_type]
+    if project:
+        args += ["--project", project]
+    return _run(args)
+
+
+@mcp.tool()
+def exp_reuse_feedback(
+    reward: float,
+    event_id: str = "",
+    last: bool = False,
+    confidence: float = 0.35,
+    reason: str = "",
+    final_status: str = "unknown",
+    chunk_id: Optional[list[str]] = None,
+    experience_id: Optional[list[str]] = None,
+) -> dict[str, Any]:
+    """Give reward feedback for recalled RAG context and update Q values.
+
+    Args:
+        reward: -1 harmful, 0 neutral, +1 helpful; decimals are allowed.
+        event_id: event_id returned by exp_rag_context.
+        last: use the locally recorded last automatic recall event.
+        confidence: feedback confidence in [0,1].
+        reason: short reason for the reward.
+        final_status: task outcome label, e.g. success/partial/failed.
+        chunk_id: optional chunk ids to rate; if omitted, rates all event chunks.
+        experience_id: optional experience ids to rate.
+    """
+    args = [
+        "reuse-feedback",
+        "--reward",
+        str(reward),
+        "--confidence",
+        str(confidence),
+        "--final-status",
+        final_status,
+        "--json",
+    ]
+    if event_id:
+        args += ["--event-id", event_id]
+    if last:
+        args.append("--last")
+    if reason:
+        args += ["--reason", reason]
+    for cid in chunk_id or []:
+        args += ["--chunk-id", cid]
+    for eid in experience_id or []:
+        args += ["--experience-id", eid]
     return _run(args)
 
 
@@ -444,8 +557,9 @@ def exp_quota() -> dict[str, Any]:
 
 @mcp.tool()
 def exp_dashboard() -> dict[str, Any]:
-    """Global pool metrics."""
-    return _run(["dashboard"])
+    """Global pool metrics. These are pool-wide aggregates that do not depend on
+    the caller's personal credential, so this tool does not require a key."""
+    return _run(["dashboard"], require_key=False)
 
 
 @mcp.tool()
@@ -522,14 +636,26 @@ def exp_upload_all(
                 "error": "full=True requires an explicit sources=[...] list "
                          "to avoid blasting every backend.",
             }
-        results: dict[str, Any] = {}
-        for src in sources:
-            results[src] = _run(
+        def _push_one(src: str) -> dict[str, Any]:
+            return _run(
                 ["push-all", "--source", src, "--yes",
                  "--task", "auto-sync", "--sensitivity", "medium",
                  "--acl", "private"],
                 timeout=max(DEFAULT_TIMEOUT, 600),
             )
+
+        results: dict[str, Any] = {}
+        # Run each source concurrently — each push-all is an independent
+        # subprocess, so a thread pool gives real parallelism here.
+        max_workers = min(4, len(sources))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
+            future_to_src = {ex.submit(_push_one, src): src for src in sources}
+            for fut in concurrent.futures.as_completed(future_to_src):
+                src = future_to_src[fut]
+                try:
+                    results[src] = fut.result()
+                except Exception as e:  # defensive: surface unexpected failures
+                    results[src] = {"ok": False, "error": f"{type(e).__name__}: {e}"}
         return {"ok": True, "mode": "full", "by_source": results}
 
     return _run(["daemon-tick"], timeout=max(DEFAULT_TIMEOUT, 600))
@@ -555,17 +681,14 @@ def exp_push_latest(
     annotate: bool = False,
 ) -> dict[str, Any]:
     """Upload the most recent local session (private)."""
-    try:
-        acl = _force_private_acl(None)
-    except ValueError as e:
-        return {"ok": False, "error": str(e)}
-
+    # MCP push tools always upload as private. Promotion to the community pool
+    # is a separate, explicit step via exp_publish(confirm=True).
     args = [
         "push-latest", "--yes",
         "--source", source,
         "--task", task,
         "--sensitivity", sensitivity,
-        "--acl", acl,
+        "--acl", "private",
     ]
     if tag:
         args += ["--tag", tag]
@@ -585,21 +708,18 @@ def exp_push_file(
     no_trace: bool = False,
 ) -> dict[str, Any]:
     """Upload one specific trajectory file (private)."""
-    try:
-        acl = _force_private_acl(None)
-    except ValueError as e:
-        return {"ok": False, "error": str(e)}
-
     p = Path(file).expanduser()
     if not p.exists():
         return {"ok": False, "error": f"file not found: {p}"}
 
+    # MCP push tools always upload as private. Promotion to the community pool
+    # is a separate, explicit step via exp_publish(confirm=True).
     args = [
         "push-file", "--yes",
         "--file", str(p),
         "--task", task,
         "--sensitivity", sensitivity,
-        "--acl", acl,
+        "--acl", "private",
     ]
     if tag:
         args += ["--tag", tag]

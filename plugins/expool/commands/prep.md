@@ -1,43 +1,43 @@
 ---
 description: 任务开工前的标准动作 —— 先在个人池里搜同类任务，把过往做法读一遍，出"学习笔记+草案"，等用户确认再动手。
-argument-hint: "<一句话描述当前任务，比如：修复 FastAPI HMAC 签名失败>"
-allowed-tools: [mcp__expool__exp_search, mcp__expool__exp_get]
+argument-hint: "<一句话任务描述；可不加引号，例如：修复 FastAPI HMAC 签名失败>"
+allowed-tools: [mcp__expool__exp_rag_context, mcp__expool__exp_search, mcp__expool__exp_get]
 ---
 
-## 输出规范（全 /expool:* 命令统一）
-
-- **回复语言：全中文。** 表头、字段名以外的解释、提示都用中文。
-- **字段释义：** 服务端字段第一次出现时附一句中文释义。常见字段速查：
-  - `auto_approved` 自动审核通过 · `pending` 待人工审核 · `revoked` 已撤回
-  - `skipped` 本轮看过但已存档，不重复推送
-  - `available_now` 本地可见的 session 总数
-  - `redactions` 上传前 layer-1 自动脱敏的次数（按字段统计）
-  - `community_unlocked` 是否解锁向社区池发布
-  - `acl=private/public/team:<name>` 仅自己 / 全社区 / 指定团队
-- **不要直接贴原始 JSON**；用紧凑表格或要点列表呈现。
+输出规范见 @../shared/output-spec.md：全中文回复、服务端字段首次出现附一句中文释义、不要直接贴原始 JSON（用紧凑表格或要点列表）。
 
 ---
 
 任务开工前的"先读再做"标准流程。这是 agent 接到任务后**第一个该跑**的命令，能避免重新踩前人的坑。
 
-**输入**：`$ARGUMENTS` 是当前任务的一句话描述。如果用户没显式给，按当前对话里他刚提的需求自己总结一条，再带进去。
+**输入**：`$ARGUMENTS` 是当前任务的一句话描述，命令后面的自由文本整串都作为任务描述。
+
+支持两种写法，效果一样：
+
+```text
+/expool:prep 修复 FastAPI HMAC 签名失败
+/expool:prep "修复 FastAPI HMAC 签名失败"
+```
+
+如果用户没显式给参数，按当前对话里他刚提的需求自己总结一条，再带进去。
 
 **执行步骤**：
 
-1. **检索个人池**。调用 `mcp__expool__exp_search`：
+1. **检索个人池 RAG 片段**。优先调用 `mcp__expool__exp_rag_context`：
    - `q` = `$ARGUMENTS`
    - `scope` = `personal`（只查当前账号自己的经验，避免社区池噪声）
-   - `top_k` = `5`
+   - `top_k` = `3`
+   - 如果当前环境没有 `exp_rag_context` 工具，再 fallback 到 `mcp__expool__exp_search`
 
-2. **读 top hit 完整卡片**：
-   - 如果第 1 步至少返回 1 条匹配（按 `q_scalar` 排序），对**最高分的那条**调用
+2. **按需读 top hit 完整卡片**：
+   - 如果第 1 步至少返回 1 条匹配，对**最高分的那条**调用
      `mcp__expool__exp_get` 拿完整卡片。
-   - 如果第 2 名与第 1 名的 `q_scalar` 差距 < 0.1，把第 2 条也读了。
+   - 如果第 2 名与第 1 名的 `score` 差距 < 0.08，把第 2 条也读了。
 
 3. **输出"学习笔记"**。在回复里给一段简短总结，按这个结构：
-   - **找到的相似任务**：每条一行，格式 `<id 8 位前缀> · <intent>`。
-   - **核心做法**：把 top hit 的 `script_steps` 提炼成 3-5 个动作要点。
-   - **踩坑提醒**：把 `pitfalls` 字段直接转述。
+   - **找到的相似片段**：每条一行，格式 `<id 8 位前缀> · <片段摘要>`。
+   - **核心做法**：把 RAG context 和 top hit 卡片的 `script_steps` 提炼成 3-5 个动作要点。
+   - **踩坑提醒**：把片段里的失败/错误信息和卡片 `pitfalls` 字段直接转述。
    - **我的计划**：基于以上，给出本次任务你打算怎么做的草案（3-5 步）。
 
 4. **请用户确认**。在草案末尾问："要按这个思路开始吗？还是有别的偏好？"

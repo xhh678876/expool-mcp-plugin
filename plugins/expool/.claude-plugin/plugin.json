@@ -1,7 +1,7 @@
 {
   "name": "expool",
-  "version": "0.2.23",
-  "description": "经验池插件：配对码/API Key 绑定、按 runtime 自动识别的会话上传、语义检索；自带 stdio MCP server 与 UserPromptSubmit hook（每条消息前自动检索 top-3 历史经验注入上下文），可注册到 Claude Code / Codex / OpenClaw / Hermes。",
+  "version": "0.3.3",
+  "description": "经验池插件：配对码/API Key 绑定、按 runtime 自动识别的会话上传、平台侧子经验 chunk + keyphrases RAG 检索；自带 stdio MCP server、自动上传控制、自动召回开关和项目池作用域，可注册到 Claude Code / Codex / OpenClaw / Hermes。",
   "author": {
     "name": "xhh666",
     "email": "xhh666@sii.edu.cn"

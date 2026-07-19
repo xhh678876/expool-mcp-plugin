@@ -15,24 +15,25 @@ description: "在用户的经验池里做语义检索，找历史上做过没。
 
 ## 调用方式
 
-调用 `mcp__expool__exp_search`，参数：
+优先调用 `mcp__expool__exp_rag_context`。它走平台侧 chunk RAG：先搜切分后的经验单元，再返回可直接阅读的 context pack。参数：
 
 - `q`（必填）：从用户请求里提炼成一句话查询。例如用户说"修复 FastAPI HMAC 签名失败" → `q="FastAPI HMAC 签名验证失败"`
-- `top_k`（可选，默认 5）：返回几条
-- `scope`（可选，默认 `auto`）：`personal` 仅个人池 / `community` 仅社区池 / `auto` 两个池都搜
+- `top_k`（可选，默认 3）：返回几条；自动召回只保留不同父 session 的最佳片段
+- `scope`（可选，默认 `personal`）：`personal` 仅个人池 / `community` 仅社区池 / `project:<slug>` 项目池 / `auto` 自动
 - `task_type`（可选）：限定某种任务类型
+
+如果当前环境没有 `mcp__expool__exp_rag_context`，再 fallback 到 `mcp__expool__exp_search`。
 
 ## 渲染结果
 
 紧凑展示，**不要贴 raw JSON**。每条命中一个小块：
 
 ```
-[<id8>]  intent: <意图，截断到 120 字符>
-         task=<task_type>  sim=<相似度，3 位小数>  scope=<personal|community>
-         outcome: <一行结果摘要>
+[<id8>]  score=<相关度，2 位小数>  chunk=<片段类型>  scope=<personal|community|project>
+         <片段摘要，截断到 160 字符>
 ```
 
-如果 top hit 的 `sim` 很高（> 0.7）且 intent 跟用户当前任务高度匹配，主动提示：
+如果 top hit 跟用户当前任务高度匹配，主动提示：
 
 > 💡 最佳命中 `<id8>` 看起来可复用 —— 要不要 `mcp__expool__exp_get` 拉完整卡片？
 
@@ -40,7 +41,8 @@ description: "在用户的经验池里做语义检索，找历史上做过没。
 
 第一次出现时给一句中文：
 
-- `sim`：query 和命中条目的语义相似度（0-1）
+- `score`：query 和命中片段的综合相关度（0-1）
 - `scope=personal`：来自你自己的私有库
 - `scope=community`：来自社区共享池
+- `scope=project:<slug>`：来自项目共享池
 - `task_type`：上传时打的任务分类标签

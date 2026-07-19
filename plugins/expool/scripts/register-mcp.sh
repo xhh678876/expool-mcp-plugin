@@ -155,9 +155,11 @@ prepare_server_for_runtime() {
     cp "$PLUGIN_ROOT/servers/requirements.txt" "$root/servers/requirements.txt" 2>/dev/null || true
     cp "$PLUGIN_ROOT/vendor/exp_uploader.py" "$root/vendor/exp_uploader.py"
     cp "$PLUGIN_ROOT/scripts/auto-upload.sh" "$root/scripts/auto-upload.sh" 2>/dev/null || true
+    cp "$PLUGIN_ROOT/scripts/auto-search.sh" "$root/scripts/auto-search.sh" 2>/dev/null || true
+    cp "$PLUGIN_ROOT/scripts/auto-recall.sh" "$root/scripts/auto-recall.sh" 2>/dev/null || true
     chmod 700 "$root" "$root/servers" "$root/vendor" "$root/scripts" 2>/dev/null || true
     chmod 600 "$root/servers/expool_mcp.py" "$root/vendor/exp_uploader.py" 2>/dev/null || true
-    chmod 700 "$root/scripts/auto-upload.sh" 2>/dev/null || true
+    chmod 700 "$root/scripts/auto-upload.sh" "$root/scripts/auto-search.sh" "$root/scripts/auto-recall.sh" 2>/dev/null || true
     note "installed runtime copy: $root"
   fi
 

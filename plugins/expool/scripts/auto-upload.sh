@@ -42,6 +42,7 @@ MODE="${EXPOOL_AUTO_MODE:-auto}"
 ALLOW_SHARED_ACL=0
 DRY_RUN=0
 VERBOSE=0
+RUN_NOW=0
 
 SERVICE_NAME="expool-auto-upload"
 SYSTEMD_SERVICE="$SERVICE_NAME.service"
@@ -76,11 +77,13 @@ Options:
   --state-root DIR        State/log directory. Default: ~/.local/share/expool
   --mode MODE             auto|systemd|launchd|loop. Default: auto
   --dry-run               For start/stop, preview scheduler changes. For tick, upload nothing.
-  --verbose               Pass verbose logging to daemon-tick.
+  --run-now               For start, run one foreground tick immediately after enabling.
+  --verbose               Pass verbose progress logging to daemon-tick/logs.
   -h, --help              Show this help.
 
 Examples:
   ./scripts/auto-upload.sh start --sources claude-code,codex --interval 180
+  ./scripts/auto-upload.sh start --sources claude-code,codex --run-now --verbose
   ./scripts/auto-upload.sh status
   ./scripts/auto-upload.sh stop
   ./scripts/auto-upload.sh tick --dry-run
@@ -144,6 +147,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --dry-run)
       DRY_RUN=1
+      shift
+      ;;
+    --run-now)
+      RUN_NOW=1
       shift
       ;;
     --verbose)
@@ -275,6 +282,10 @@ write_tick_wrapper() {
     return 0
   fi
   mkdir -p "$STATE_ROOT" "$LOG_DIR"
+  local verbose_arg=""
+  if [ "$VERBOSE" = "1" ]; then
+    verbose_arg=" --verbose"
+  fi
   {
     printf '#!/usr/bin/env bash\n'
     printf 'set -euo pipefail\n'
@@ -283,8 +294,8 @@ write_tick_wrapper() {
     printf 'export EXP_AUTO_SOURCES=%q\n' "$SOURCES"
     printf 'export EXP_AUTO_ACL=%q\n' "$ACL"
     printf 'export EXP_AUTO_TASK=%q\n' "$TASK"
-    printf 'exec python3 %q --base %q daemon-tick --sources %q --max-per-source %q --max-session-kb %q --acl %q --task %q\n' \
-      "$CLI" "$BASE" "$SOURCES" "$MAX_PER_SOURCE" "$MAX_SESSION_KB" "$ACL" "$TASK"
+    printf 'exec python3 %q --base %q daemon-tick --sources %q --max-per-source %q --max-session-kb %q --acl %q --task %q%s\n' \
+      "$CLI" "$BASE" "$SOURCES" "$MAX_PER_SOURCE" "$MAX_SESSION_KB" "$ACL" "$TASK" "$verbose_arg"
   } > "$TICK_WRAPPER"
   chmod 700 "$TICK_WRAPPER"
 }
@@ -303,6 +314,9 @@ write_loop_wrapper() {
       "$SELF" "$SOURCES" "$MAX_PER_SOURCE" "$MAX_SESSION_KB" "$ACL" "$TASK" "$BASE" "$CRED_DIR" "$STATE_ROOT"
     if [ "$ALLOW_SHARED_ACL" = "1" ]; then
       printf ' --allow-shared-acl'
+    fi
+    if [ "$VERBOSE" = "1" ]; then
+      printf ' --verbose'
     fi
     printf ' >> %q 2>&1 || true\n' "$LOG_FILE"
     printf '  sleep %q\n' "$INTERVAL"
@@ -495,6 +509,16 @@ cmd_start() {
     launchd) start_launchd ;;
     loop) start_loop ;;
   esac
+  if [ "$RUN_NOW" = "1" ]; then
+    if [ "$DRY_RUN" = "1" ]; then
+      note "would run one foreground upload tick now"
+    else
+      note "running one foreground upload tick now"
+      tick_cmd
+    fi
+  else
+    note "scheduler enabled; use 'auto-upload.sh tick --verbose' or '/expool:auto-tick --verbose' to watch one upload pass"
+  fi
 }
 
 cmd_stop() {

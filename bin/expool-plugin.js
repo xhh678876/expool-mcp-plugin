@@ -10,6 +10,7 @@ const root = path.resolve(__dirname, "..");
 const pluginRoot = path.join(root, "plugins", "expool");
 const registerScript = path.join(pluginRoot, "scripts", "register-mcp.sh");
 const autoScript = path.join(pluginRoot, "scripts", "auto-upload.sh");
+const recallScript = path.join(pluginRoot, "scripts", "auto-recall.sh");
 const uploader = path.join(pluginRoot, "vendor", "exp_uploader.py");
 const configFile = path.join(os.homedir(), ".config", "expool", "plugin.json");
 
@@ -51,6 +52,9 @@ Commands:
   bind+api      Alias for bind-api, matching the slash command spelling.
   pair          Exchange a portal pairing code (expair_...) for a local API key.
   auto          Control automatic uploads: on|off|status|tick|logs.
+  recall        Control automatic recall: on|off|status|search.
+  feedback      Rate the latest or a specified recall event.
+  projects      List project pools available to this credential.
   detect        Show the newest local sessions and detected runtime.
   status        Show local credential identity through the bundled uploader.
   doctor        Check local prerequisites and plugin files.
@@ -77,6 +81,10 @@ Examples:
   expool-plugin pair expair_...               # 推荐绑定方式（配对码）
   expool-plugin bind-api expk_...             # 备选：长期 API key
   expool-plugin auto on
+  expool-plugin recall on --targets claude,codex
+  expool-plugin feedback --last --reward 1 --reason helped
+  expool-plugin recall on --scope project:my-project
+  expool-plugin projects
   expool-plugin doctor
 
   # 高级用法（指定 gateway 或限定 agents）
@@ -144,7 +152,7 @@ function consumeFlag(args, name) {
 }
 
 function ensureBundledFiles() {
-  for (const file of [registerScript, autoScript, uploader]) {
+  for (const file of [registerScript, autoScript, recallScript, uploader]) {
     if (!exists(file)) {
       die(`package is incomplete; missing ${file}`);
     }
@@ -192,7 +200,7 @@ function cmdInstall(args) {
   if (!mcpOnly && !dryRun) {
     // Claude Code: ~/.claude/commands/expool/<name>.md → /expool:<name>
     writeUserLevelClaudeCommands();
-    // Codex: ~/.codex/prompts/expool-<name>.md → /expool-<name>
+    // Codex custom prompts: ~/.codex/prompts/expool-<name>.md -> /prompts:expool-<name>
     writeUserLevelCodexPrompts();
     try {
       installAgentPlugins(targets);
@@ -203,9 +211,9 @@ function cmdInstall(args) {
 }
 
 function writeUserLevelCodexPrompts() {
-  // Codex 用户级 slash 命令：~/.codex/prompts/<name>.md → /<name>
-  // 用 `expool-<原名>` 前缀避免和别的 prompt 命名冲突，与 Claude Code 的
-  // `/expool:status` 风格对齐（codex 这边变成 `/expool-status`）。
+  // Official Codex custom prompts live directly under ~/.codex/prompts and are
+  // invoked as /prompts:<file-stem>. Prefix regular commands to avoid collisions,
+  // while keeping ep.md short so users can type /prompts:ep status.
   const srcDir = path.join(pluginRoot, "commands");
   const destDir = path.join(os.homedir(), ".codex", "prompts");
   if (!exists(srcDir)) return;
@@ -221,12 +229,13 @@ function writeUserLevelCodexPrompts() {
     fs.mkdirSync(destDir, { recursive: true });
     let count = 0;
     for (const f of files) {
-      const dest = path.join(destDir, `expool-${f}`);
+      const destName = f === "ep.md" ? f : `expool-${f}`;
+      const dest = path.join(destDir, destName);
       fs.copyFileSync(path.join(srcDir, f), dest);
       count++;
     }
     console.error(
-      `[expool] wrote ${count} codex prompts to ${destDir} (use /expool-status, /expool-upload-all, ... after restarting codex)`,
+      `[expool] wrote ${count} codex prompts to ${destDir} (use /prompts:ep status or /prompts:expool-status after restarting codex)`,
     );
   } catch (e) {
     console.error(`[expool] failed to write codex prompts: ${e.message}`);
@@ -369,12 +378,13 @@ function cmdBind(args) {
   if (args.length > 0) die(`unknown bind argument: ${args[0]}`, 2);
   if (!apiKey) die("missing API key. Create one at /me/api-keys, then run: expool-plugin bind expk_...", 2);
   writePluginConfig(base);
-  const out = [uploader, "--base", base, "bind-api", "--api-key", apiKey];
+  const out = [uploader, "--base", base, "bind-api"];
   if (agentName) out.push("--agent-name", agentName);
   if (noVerify) out.push("--no-verify");
   run("python3", out, {
     env: {
       EXP_CRED_DIR: process.env.EXPOOL_CRED_DIR || path.join(os.homedir(), ".config", "expool"),
+      EXP_BIND_API_KEY: apiKey,
     },
   });
 }
@@ -388,12 +398,13 @@ function cmdPair(args) {
   if (args.length > 0) die(`unknown pair argument: ${args[0]}`, 2);
   if (!code) die("missing pairing code. Create one at /me/api-keys, then run: expool-plugin pair expair_...", 2);
   writePluginConfig(base);
-  const out = [uploader, "--base", base, "pair", "--code", code];
+  const out = [uploader, "--base", base, "pair"];
   if (agentName) out.push("--agent-name", agentName);
   if (noVerify) out.push("--no-verify");
   run("python3", out, {
     env: {
       EXP_CRED_DIR: process.env.EXPOOL_CRED_DIR || path.join(os.homedir(), ".config", "expool"),
+      EXP_PAIR_CODE: code,
     },
   });
 }
@@ -417,6 +428,26 @@ function cmdAuto(args) {
   });
 }
 
+function cmdRecall(args) {
+  ensureBundledFiles();
+  const sub = args.shift() || "status";
+  const base = splitOption(args, ["--base"], defaultBase);
+  const mapped = {
+    on: "on",
+    enable: "on",
+    start: "on",
+    off: "off",
+    disable: "off",
+    stop: "off",
+    status: "status",
+    search: "search",
+  }[sub];
+  if (!mapped) die(`unknown recall command: ${sub}`, 2);
+  run("bash", [recallScript, mapped, ...args], {
+    env: { EXPOOL_BASE: base },
+  });
+}
+
 function cmdStatus(args) {
   ensureBundledFiles();
   const base = splitOption(args, ["--base"], defaultBase);
@@ -424,6 +455,27 @@ function cmdStatus(args) {
   run("python3", [uploader, "--base", base, "whoami"], {
     env: {
       EXP_CRED_DIR: process.env.EXPOOL_CRED_DIR || path.join(os.homedir(), ".config", "expool"),
+    },
+  });
+}
+
+function cmdProjects(args) {
+  ensureBundledFiles();
+  const base = splitOption(args, ["--base"], defaultBase);
+  run("python3", [uploader, "--base", base, "projects", ...args], {
+    env: {
+      EXP_CRED_DIR: process.env.EXPOOL_CRED_DIR || path.join(os.homedir(), ".config", "expool"),
+    },
+  });
+}
+
+function cmdReuseFeedback(args) {
+  ensureBundledFiles();
+  const base = splitOption(args, ["--base"], defaultBase);
+  run("python3", [uploader, "--base", base, "reuse-feedback", ...args], {
+    env: {
+      EXP_CRED_DIR: process.env.EXPOOL_CRED_DIR || path.join(os.homedir(), ".config", "expool"),
+      EXPOOL_RUNTIME_DIR: process.env.EXPOOL_RUNTIME_DIR || path.join(os.homedir(), ".config", "expool", "runtime"),
     },
   });
 }
@@ -451,6 +503,15 @@ function cmdDoctor() {
   checkLine("register script", exists(registerScript), registerScript);
   checkLine("auto-upload script", exists(autoScript), autoScript);
   checkLine("uploader", exists(uploader), uploader);
+
+  const uploaderVersion = capture("python3", [uploader, "--version"]);
+  checkLine(
+    "uploader version",
+    uploaderVersion.ok,
+    uploaderVersion.ok
+      ? uploaderVersion.stdout
+      : uploaderVersion.stderr || (uploaderVersion.error && uploaderVersion.error.message) || "unable to read version",
+  );
 
   const python = capture("python3", ["--version"]);
   checkLine("python3", python.ok, python.stdout || python.stderr || "not found");
@@ -491,6 +552,17 @@ switch (command) {
     break;
   case "auto":
     cmdAuto(args);
+    break;
+  case "recall":
+    cmdRecall(args);
+    break;
+  case "feedback":
+  case "reuse-feedback":
+    cmdReuseFeedback(args);
+    break;
+  case "projects":
+  case "project-list":
+    cmdProjects(args);
     break;
   case "detect":
     cmdDetect(args);

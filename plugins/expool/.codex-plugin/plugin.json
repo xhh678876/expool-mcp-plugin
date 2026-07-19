@@ -1,7 +1,7 @@
 {
   "name": "expool",
-  "version": "0.2.23",
-  "description": "面向 Codex / Claude Code / OpenClaw / Hermes 的经验池集成。配对码或 API Key 一次性绑定，注册 MCP server，跨 runtime 检索经验，自动识别本机 trace 后上传到 private 库。",
+  "version": "0.3.3",
+  "description": "面向 Codex / Claude Code / OpenClaw / Hermes 的经验池集成。配对码或 API Key 一次性绑定，注册 MCP server，平台侧子经验 chunk + keyphrases RAG 召回个人/项目池经验，自动识别本机 trace 后上传到 private 库。",
   "author": {
     "name": "xhh666",
     "email": "xhh666@sii.edu.cn"
@@ -22,7 +22,7 @@
   "interface": {
     "displayName": "Experience Pool",
     "shortDescription": "检索并上传共享 agent trace 的经验池插件",
-    "longDescription": "经验池让 Codex 等本地 agent runtime 用门户 API Key 绑定、注册自带的 MCP server、检索前人轨迹，并把自动识别到的 Claude Code / Codex / OpenClaw / Hermes trace 以 private 形式上传。",
+    "longDescription": "经验池让 Codex 等本地 agent runtime 用门户 API Key 绑定、注册自带的 MCP server、检索前人轨迹，并把自动识别到的 Claude Code / Codex / OpenClaw / Hermes trace 以 private 形式上传。可通过 recall-on 写入 Claude hook / Codex AGENTS 契约，让每个非平凡任务先调用平台侧 RAG context；该 RAG 由服务端把长 session 切成子经验 chunk，生成 keyphrases，并支持 personal、community 和 project:<slug> 项目池作用域。",
     "developerName": "xhh666",
     "category": "Coding",
     "capabilities": [
